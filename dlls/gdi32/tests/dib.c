@@ -1150,8 +1150,11 @@ static const char *sha1_graphics_1_ddb[] =
     "7a3dde7a3ce1835635ed13466c35ec738c85b2a1",
     "387575fa149f5d0499b39358e78dd2699b6959bc",
     "889f606e05e526aa20dc63fe0fe53164c7f7e426",
+    "269889ac485e75a5190cbcab92ed3e3ced979401",
+    "bd6485f012ec05b844adb804fc5e037c53f3a086",
     "95a2d98b57517df5cabba75ae4102b8435cd4901",
     "273c20f24743ac12cc1396c0c9f2e3d413b3c2ee",
+    "7bd6ceaf47ae4751300c75b3de1ef3b792910547",
     "23366004515f3bc46796ea505d748f8d0f97fbe1",
     "23366004515f3bc46796ea505d748f8d0f97fbe1",
     "ee08e9d1b7741f01c234ab8ee15e43792a00fa9a",
@@ -1243,8 +1246,11 @@ static const char *sha1_graphics_1_ddb_inverted[] =
     "7a3dde7a3ce1835635ed13466c35ec738c85b2a1",
     "387575fa149f5d0499b39358e78dd2699b6959bc",
     "889f606e05e526aa20dc63fe0fe53164c7f7e426",
+    "269889ac485e75a5190cbcab92ed3e3ced979401",
+    "bd6485f012ec05b844adb804fc5e037c53f3a086",
     "95a2d98b57517df5cabba75ae4102b8435cd4901",
     "273c20f24743ac12cc1396c0c9f2e3d413b3c2ee",
+    "7bd6ceaf47ae4751300c75b3de1ef3b792910547",
     "23366004515f3bc46796ea505d748f8d0f97fbe1",
     "23366004515f3bc46796ea505d748f8d0f97fbe1",
     "ee08e9d1b7741f01c234ab8ee15e43792a00fa9a",
@@ -2666,7 +2672,7 @@ static void draw_graphics(HDC hdc, const BITMAPINFO *bmi, BYTE *bits)
     solid_patblt( hdc,  8, 50, 1, 1, RGB( 0xff, 0, 0 ) );
     solid_patblt( hdc, 10, 50, 1, 1, PALETTERGB( 0xff, 0, 0 ) );
 
-    compare_hash_broken_todo(hdc, bmi, bits, "Colors", is_ddb, is_ddb);
+    compare_hash_broken_todo(hdc, bmi, bits, "Colors", is_ddb * 3, is_ddb);
 
     for (i = 0; i < 256; i++)
     {
@@ -2707,7 +2713,7 @@ static void draw_graphics(HDC hdc, const BITMAPINFO *bmi, BYTE *bits)
         }
     }
 
-    compare_hash(hdc, bmi, bits, "SetPixel");
+    compare_hash_broken_todo(hdc, bmi, bits, "SetPixel", is_ddb, FALSE);
 
     /* gradients */
 
