@@ -97,6 +97,7 @@ static DWORD CALLBACK thread( LPVOID arg )
         "bad last error %d\n", GetLastError() );
 
     DestroyWindow( hwnd );
+    Sleep(200);
     ok( SetThreadDesktop( d2 ), "set thread desktop failed\n" );
     d1 = GetThreadDesktop(GetCurrentThreadId());
     ok( d1 == d2, "GetThreadDesktop did not return set desktop %p/%p\n", d1, d2 );
