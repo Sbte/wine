@@ -42,6 +42,7 @@ static void toolbarcheck( HWND hDlg)
     DWORD ret;
     char classname[20];
 
+    trace("a\n");
     for( ctrl = GetWindow( hDlg, GW_CHILD);
             ctrl ; ctrl = GetWindow( ctrl, GW_HWNDNEXT)) {
         GetClassNameA( ctrl, classname, 10);
@@ -61,6 +62,7 @@ static UINT_PTR CALLBACK OFNHookProc( HWND hDlg, UINT msg, WPARAM wParam, LPARAM
 {
     LPNMHDR nmh;
 
+    trace("a: %u\n", msg);
     if( msg == WM_NOTIFY)
     {
         nmh = (LPNMHDR) lParam;
@@ -87,11 +89,12 @@ static UINT_PTR CALLBACK OFNHookProc( HWND hDlg, UINT msg, WPARAM wParam, LPARAM
 /* bug 6829 */
 static void test_DialogCancel(void)
 {
-    OPENFILENAMEA ofn;
+    OPENFILENAMEA ofn = {0};
     BOOL result;
-    char szFileName[MAX_PATH] = "";
+    char szFileName[MAX_PATH] = {0};
     char szInitialDir[MAX_PATH];
 
+    trace("a\n");
     GetWindowsDirectoryA(szInitialDir, MAX_PATH);
 
     ZeroMemory(&ofn, sizeof(ofn));
@@ -160,6 +163,7 @@ static void test_DialogCancel(void)
 
 static UINT_PTR CALLBACK create_view_window2_hook(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    trace("a: %u\n", msg);
     if (msg == WM_NOTIFY)
     {
         if (((LPNMHDR)lParam)->code == CDN_FOLDERCHANGE)
@@ -244,6 +248,7 @@ cleanup:
 
 static UINT_PTR WINAPI template_hook(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    trace("a: %u\n", msg);
     if (msg == WM_INITDIALOG)
     {
         HWND p,cb;
@@ -269,6 +274,7 @@ static void test_create_view_window2(void)
     char filename[1024] = {0};
     DWORD ret;
 
+    trace("a\n");
     ofn.lStructSize = OPENFILENAME_SIZE_VERSION_400A;
     ofn.lpstrFile = filename;
     ofn.nMaxFile = 1024;
@@ -286,6 +292,7 @@ static void test_create_view_template(void)
     char filename[1024] = {0};
     DWORD ret;
 
+    trace("a\n");
     ofn.lStructSize = OPENFILENAME_SIZE_VERSION_400A;
     ofn.lpstrFile = filename;
     ofn.nMaxFile = 1024;
@@ -334,6 +341,7 @@ static UINT_PTR WINAPI resize_template_hook(HWND dlg, UINT msg, WPARAM wParam, L
     static HWND ctrls[MAXNRCTRLS];
     static int nrctrls;
 
+    trace("a: %u\n", msg);
     switch( msg)
     {
         case WM_INITDIALOG:
@@ -522,6 +530,7 @@ static void test_resize(void)
     DWORD ret;
     int i;
 
+    trace("a\n");
     ofn.lpstrFile = filename;
     ofn.nMaxFile = 1024;
     ofn.lpfnHook = resize_template_hook;
@@ -572,6 +581,7 @@ static UINT_PTR WINAPI test_ok_wndproc(HWND dlg, UINT msg, WPARAM wParam, LPARAM
     HWND parent = GetParent( dlg);
     static ok_wndproc_testcase *testcase = NULL;
     static UINT msgFILEOKSTRING;
+    trace("a: %u\n", msg);
     if (msg == WM_INITDIALOG)
     {
         testcase = (ok_wndproc_testcase*)((OPENFILENAMEA*)lParam)->lCustData;
@@ -612,6 +622,7 @@ static UINT_PTR WINAPI test_ok_wndproc(HWND dlg, UINT msg, WPARAM wParam, LPARAM
 
 static UINT_PTR WINAPI ok_template_hook(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    trace("a: %u\n", msg);
     if (msg == WM_SETFONT)
         SetWindowLongPtrA( dlg, GWLP_WNDPROC, (LONG_PTR) test_ok_wndproc);
     return FALSE;
@@ -627,6 +638,7 @@ static void test_ok(void)
     DWORD ret;
     BOOL cdret;
 
+    trace("a\n");
     cdret = GetCurrentDirectoryA(sizeof(curdir), curdir);
     ok(cdret, "Failed to get current dir err %d\n", GetLastError());
     if (!GetTempFileNameA(".", "txt", 0, tmpfilename)) {
@@ -698,6 +710,7 @@ static UINT_PTR WINAPI template_hook_arrange(HWND dlgChild, UINT msg, WPARAM wPa
     static HWND hwndStc32;
     HWND dlgParent;
 
+    trace("a: %u\n", msg);
     dlgParent = GetParent( dlgChild);
     if (msg == WM_INITDIALOG) {
         index = ((OPENFILENAMEA*)lParam)->lCustData;
@@ -792,6 +805,7 @@ static void test_arrange(void)
     DLGITEMTEMPLATE *itemtemplateStc32, *itemtemplateBtn;
     int i;
 
+    trace("a\n");
     /* load subdialog template into memory */
     hRes = FindResourceA( GetModuleHandleA(NULL), "template_stc32", (LPSTR)RT_DIALOG);
     hDlgTmpl = LoadResource( GetModuleHandleA(NULL), hRes );
@@ -863,6 +877,7 @@ static UINT_PTR CALLBACK path_hook_proc( HWND hDlg, UINT msg, WPARAM wParam, LPA
 {
     LPNMHDR nmh;
 
+    trace("a: %u\n", msg);
     if( msg == WM_NOTIFY)
     {
         nmh = (LPNMHDR) lParam;
@@ -887,11 +902,12 @@ static UINT_PTR CALLBACK path_hook_proc( HWND hDlg, UINT msg, WPARAM wParam, LPA
 
 static void test_getfolderpath(void)
 {
-    OPENFILENAMEA ofn;
+    OPENFILENAMEA ofn = {0};
     BOOL result;
-    char szFileName[MAX_PATH] = "";
+    char szFileName[MAX_PATH] = {0};
     char szInitialDir[MAX_PATH];
 
+    trace("a\n");
     /* We need to pick a different directory as the other tests because of new
      * Windows 7 behavior.
      */
@@ -927,6 +943,7 @@ static void test_resizable2(void)
     char filename[1024] = "pls press Enter if sizable, Esc otherwise";
     DWORD ret;
 
+    trace("a\n");
     /* interactive because there is no hook function */
     if( !winetest_interactive) {
         skip( "some interactive resizable dialog tests (set WINETEST_INTERACTIVE=1)\n");
@@ -969,9 +986,10 @@ static void test_mru(void)
     const char *test_dir_name = "C:\\mru_test";
     const char *test_file_name = "test.txt";
     const char *test_full_path = "C:\\mru_test\\test.txt";
-    char filename_buf[MAX_PATH];
+    char filename_buf[MAX_PATH] = {0};
     DWORD ret;
 
+    trace("a\n");
     ofn.lpstrFile = filename_buf;
     ofn.nMaxFile = sizeof(filename_buf);
     ofn.lpTemplateName = "template1";
@@ -1014,6 +1032,7 @@ static void test_mru(void)
 static UINT_PTR WINAPI test_extension_wndproc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     HWND parent = GetParent( dlg);
+    trace("a: %u\n", msg);
     if( msg == WM_NOTIFY) {
         SetTimer( dlg, 0, 1000, 0);
         PostMessageA( parent, WM_COMMAND, IDOK, 0);
@@ -1033,6 +1052,7 @@ static void test_extension_helper(OPENFILENAMEA* ofn, const char *filter,
     DWORD ret;
     BOOL boolret;
 
+    trace("a\n");
     strcpy(ofn->lpstrFile, "deadbeef");
     ofn->lpstrFilter = filter;
 
@@ -1121,6 +1141,7 @@ static BOOL WINAPI test_null_enum(HWND hwnd, LPARAM lParam)
     /* Find the textbox and send a filename so IDOK will work.
        If the file textbox is empty IDOK will be ignored */
     CHAR className[20];
+    trace("a\n");
     if(GetClassNameA(hwnd, className, sizeof(className)) > 0 && !strcmp("Edit",className))
     {
         SetWindowTextA(hwnd, "testfile");
@@ -1132,6 +1153,7 @@ static BOOL WINAPI test_null_enum(HWND hwnd, LPARAM lParam)
 static UINT_PTR WINAPI test_null_wndproc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     HWND parent = GetParent( dlg);
+    trace("a: %u\n", msg);
     if( msg == WM_NOTIFY) {
         SetTimer( dlg, 0, 100, 0);
         SetTimer( dlg, 1, 1000, 0);
@@ -1157,6 +1179,7 @@ static void test_null_filename(void)
                        'A','l','l','\0','*','\0','\0'};
     DWORD ret;
 
+    trace("a\n");
     ofnA.lStructSize = OPENFILENAME_SIZE_VERSION_400A;
     ofnA.lpstrFile = NULL;
     ofnA.nMaxFile = 0;
@@ -1229,6 +1252,7 @@ static void test_directory_filename(void)
     WCHAR szInitialDirW[MAX_PATH] = {0};
     DWORD ret;
 
+    trace("a\n");
     GetWindowsDirectoryA(szInitialDir, MAX_PATH);
     GetWindowsDirectoryW(szInitialDirW, MAX_PATH);
 
@@ -1263,6 +1287,7 @@ static UINT_PTR WINAPI test_ole_init_wndproc(HWND dlg, UINT msg, WPARAM wParam, 
 {
     HRESULT hr;
 
+    trace("a: %u\n", msg);
     hr = OleInitialize(NULL);
     ok(hr == S_FALSE, "OleInitialize() returned %#x\n", hr);
     OleUninitialize();
@@ -1277,6 +1302,7 @@ static LRESULT CALLBACK hook_proc(int code, WPARAM wp, LPARAM lp)
     static BOOL first_dlg = TRUE;
     HRESULT hr;
 
+    trace("a\n");
     if (code == HCBT_CREATEWND)
     {
         CBT_CREATEWNDW *c = (CBT_CREATEWNDW *)lp;
@@ -1308,6 +1334,7 @@ static void test_ole_initialization(void)
     HHOOK hook;
     BOOL ret;
 
+    trace("a\n");
     hook = SetWindowsHookExW(WH_CBT, hook_proc, NULL, GetCurrentThreadId());
 
     ofn.lStructSize = OPENFILENAME_SIZE_VERSION_400A;
@@ -1328,17 +1355,30 @@ static void test_ole_initialization(void)
 
 START_TEST(filedlg)
 {
+    trace("a\n");
     test_DialogCancel();
+    trace("a\n");
     test_create_view_window2();
+    trace("a\n");
     test_create_view_template();
+    trace("a\n");
     test_arrange();
+    trace("a\n");
     test_resize();
+    trace("a\n");
     test_ok();
+    trace("a\n");
     test_getfolderpath();
+    trace("a\n");
     test_mru();
+    trace("a\n");
     if( resizesupported) test_resizable2();
+    trace("a\n");
     test_extension();
+    trace("a\n");
     test_null_filename();
+    trace("a\n");
     test_directory_filename();
+    trace("a\n");
     test_ole_initialization();
 }
