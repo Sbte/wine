@@ -7391,7 +7391,7 @@ static HRESULT read_param( struct reader *reader, const WS_FIELD_DESCRIPTION *de
 static HRESULT read_param_array( struct reader *reader, const WS_FIELD_DESCRIPTION *desc, WS_HEAP *heap,
                                  void **ret, ULONG *count )
 {
-    if (!ret && !(ret = ws_alloc_zero( heap, sizeof(void **) ))) return WS_E_QUOTA_EXCEEDED;
+    if (!ret && !(ret = ws_alloc_zero( heap, sizeof(void *) ))) return WS_E_QUOTA_EXCEEDED;
     return read_type_array( reader, desc, heap, ret, count );
 }
 
