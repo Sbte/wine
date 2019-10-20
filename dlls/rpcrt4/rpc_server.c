@@ -1558,12 +1558,16 @@ RPC_STATUS WINAPI RpcMgmtWaitServerListen( void )
   WaitForSingleObject( event, INFINITE );
   TRACE( "done waiting\n" );
 
-  EnterCriticalSection(&listen_cs);
   /* wait for server threads to finish */
   while(1)
   {
+      EnterCriticalSection(&listen_cs);
       if (listen_count)
+      {
+          LeaveCriticalSection(&listen_cs);
           break;
+      }
+      LeaveCriticalSection(&listen_cs);
 
       wait_thread = NULL;
       EnterCriticalSection(&server_cs);
@@ -1577,10 +1581,9 @@ RPC_STATUS WINAPI RpcMgmtWaitServerListen( void )
           break;
 
       TRACE("waiting for thread %u\n", GetThreadId(wait_thread));
-      LeaveCriticalSection(&listen_cs);
       WaitForSingleObject(wait_thread, INFINITE);
-      EnterCriticalSection(&listen_cs);
   }
+  EnterCriticalSection(&listen_cs);
   if (listen_done_event == event)
   {
       listen_done_event = NULL;
