@@ -6154,6 +6154,7 @@ static HRESULT read_type_union( struct reader *reader, const WS_UNION_DESCRIPTIO
     save_reader_position( reader, &pos );
     if ((hr = read_type_next_node( reader )) != S_OK) return hr;
 
+    *found = FALSE;
     for (i = 0; i < desc->fieldCount; i++)
     {
         if ((*found = match_element( reader->current, desc->fields[i]->field.localName, desc->fields[i]->field.ns )))
