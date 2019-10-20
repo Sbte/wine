@@ -2387,7 +2387,11 @@ static HRESULT append_text_bytes( struct reader *reader, WS_XML_TEXT_NODE *node,
 
     if (!(new = alloc_base64_text( NULL, old->length + len ))) return E_OUTOFMEMORY;
     memcpy( new->bytes, old->bytes, old->length );
-    if ((hr = read_bytes( reader, new->bytes + old->length, len )) != S_OK) return hr;
+    if ((hr = read_bytes( reader, new->bytes + old->length, len )) != S_OK)
+    {
+        heap_free( new );
+        return hr;
+    }
     heap_free( old );
     node->text = &new->text;
     return S_OK;
@@ -5318,12 +5322,17 @@ static HRESULT read_type_wsz( struct reader *reader, WS_TYPE_MAPPING mapping,
 
     case WS_READ_OPTIONAL_POINTER:
     case WS_READ_NILLABLE_POINTER:
-        if (size != sizeof(str)) return E_INVALIDARG;
+        if (size != sizeof(str))
+        {
+            ws_free(heap, str, sizeof(str));
+            return E_INVALIDARG;
+        }
         *ret = str;
         break;
 
     default:
         FIXME( "read option %u not supported\n", option );
+        ws_free(heap, str, sizeof(str));
         return E_NOTIMPL;
     }
 
