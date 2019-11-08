@@ -145,8 +145,6 @@ static void test_SIPRetrieveSubjectGUID(void)
     BOOL ret;
     GUID subject;
     HANDLE file;
-    static const CHAR windir[] = "windir";
-    static const CHAR regeditExe[] = "regedit.exe";
     static const GUID nullSubject  = { 0x0, 0x0, 0x0, { 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 }};
     static const WCHAR deadbeef[]  = { 'c',':','\\','d','e','a','d','b','e','e','f','.','d','b','f',0 };
     /* Couldn't find a name for this GUID, it's the one used for 95% of the files */
@@ -183,10 +181,9 @@ static void test_SIPRetrieveSubjectGUID(void)
      *
      * Use A-functions where possible as that should be available on all platforms
      */
-    ret = GetEnvironmentVariableA(windir, regeditPath, MAX_PATH);
-    ok (ret > 0, "expected GEVA(windir) to succeed, last error %d\n", GetLastError());
-    strcat(regeditPath, "\\");
-    strcat(regeditPath, regeditExe);
+    ret = GetWindowsDirectoryA(regeditPath, MAX_PATH-12);
+    ok (ret > 0, "Expected GetWindowsDirectoryA to succeed, last error %d\n", GetLastError());
+    strcat(regeditPath, "\\regedit.exe");
     MultiByteToWideChar(CP_ACP, 0, regeditPath, strlen(regeditPath)+1, regeditPathW,
                         ARRAY_SIZE(regeditPathW));
 
