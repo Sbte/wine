@@ -3448,6 +3448,7 @@ static void test_http_protocol_url(LPCWSTR url, int prot, DWORD flags, DWORD tym
                 CHECK_CALLED(ReportData);
             if(prot == HTTPS_TEST)
                 CLEAR_CALLED(QueryService_HttpSecurity);
+            CLEAR_CALLED(GetBindString_SAMESITE_COOKIE_LEVEL); /* New in IE11 */
 
             while(1) {
                 if(bindf & BINDF_FROMURLMON)
