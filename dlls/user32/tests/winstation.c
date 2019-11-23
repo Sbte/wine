@@ -815,6 +815,7 @@ typedef struct tag_wnd_param
     HWND hwnd;
     HDESK hdesk;
     HANDLE hevent;
+    HWND ex_style;
 } wnd_param;
 
 static DWORD WINAPI create_window(LPVOID param)
@@ -825,8 +826,9 @@ static DWORD WINAPI create_window(LPVOID param)
 
     ret = SetThreadDesktop(param1->hdesk);
     ok(ret, "SetThreadDesktop failed!\n");
-    param1->hwnd = CreateWindowA("test_class", param1->wnd_name, WS_POPUP, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
+    param1->hwnd = CreateWindowA("test_class", param1->wnd_name, WS_POPUP | WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
     ok(param1->hwnd != 0, "CreateWindowA failed!\n");
+    SetWindowPos(param1->hwnd, param1->ex_style, 0,0,0,0, SWP_NOSIZE|SWP_NOMOVE);
     ret = SetEvent(param1->hevent);
     ok(ret, "SetEvent failed!\n");
 
@@ -867,7 +869,7 @@ static DWORD set_foreground(HWND hwnd)
 
 static void test_foregroundwindow(void)
 {
-    HWND hwnd, hwnd_test, partners[2], hwnds[2];
+    HWND hwnd, hwnd_test, partners[2], hwnds[2], top_hwnds[2];
     HDESK hdesks[2];
     int thread_desk_id, input_desk_id, hwnd_id;
     WNDCLASSA wclass;
@@ -882,6 +884,7 @@ static void test_foregroundwindow(void)
     wclass.lpfnWndProc   = WndProc;
     RegisterClassA(&wclass);
     param.wnd_name = "win_name";
+    param.ex_style = 0;
 
     hdesks[0] = GetThreadDesktop(GetCurrentThreadId());
     ok(hdesks[0] != NULL, "OpenDesktop failed!\n");
@@ -930,7 +933,20 @@ static void test_foregroundwindow(void)
         partners[thread_desk_id] = param.hwnd;
     }
 
-    trace("hwnd0 %p hwnd1 %p partner0 %p partner1 %p\n", hwnds[0], hwnds[1], partners[0], partners[1]);
+    for (thread_desk_id = 0; thread_desk_id < DESKTOPS; thread_desk_id++)
+    {
+        param.hdesk = hdesks[thread_desk_id];
+        param.hevent = CreateEventA(NULL, TRUE, FALSE, NULL);
+        param.wnd_name = "win_name_topmost";
+        param.ex_style = HWND_TOP;
+        CreateThread(NULL, 0, create_window, &param, 0, NULL);
+        ret = WaitForSingleObject(param.hevent, INFINITE);
+        ok(ret == WAIT_OBJECT_0, "wait failed!\n");
+        top_hwnds[thread_desk_id] = param.hwnd;
+    }
+
+    trace("hwnd0 %p hwnd1 %p partner0 %p partner1 %p top_hwnd0 %p top_hwnd1 %p\n",
+          hwnds[0], hwnds[1], partners[0], partners[1], top_hwnds[0], top_hwnds[1]);
 
     for (hwnd_id = 0; hwnd_id < DESKTOPS; hwnd_id++)
         for (thread_desk_id = 0; thread_desk_id < DESKTOPS; thread_desk_id++)
@@ -990,6 +1006,7 @@ static void test_foregroundwindow(void)
         ok(ret, "set thread desktop failed!\n");
         SendMessageA(hwnds[thread_desk_id], WM_DESTROY, 0, 0);
         SendMessageA(partners[thread_desk_id], WM_DESTROY, 0, 0);
+        SendMessageA(top_hwnds[thread_desk_id], WM_DESTROY, 0, 0);
     }
 
     ret = SwitchDesktop(hdesks[0]);
