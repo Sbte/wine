@@ -3257,7 +3257,8 @@ static DWORD WINAPI create_window_thread(void *param)
     BOOL ret;
 
     p->window = CreateWindowA("static", NULL, WS_POPUP | WS_VISIBLE, 0, 0, 0, 0, 0, 0, 0, 0);
-
+    SetWindowPos(p->window, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+    
     ret = SetEvent(p->window_created);
     ok(ret, "SetEvent failed, last error %#x.\n", GetLastError());
 
@@ -3266,6 +3267,50 @@ static DWORD WINAPI create_window_thread(void *param)
 
     DestroyWindow(p->window);
     return 0;
+}
+
+static DWORD WINAPI create_window_thread2(void *param)
+{
+    struct create_window_thread_params *p = param;
+    BOOL ret;
+    MSG msg;
+
+    p->window = CreateWindowExA(WS_EX_TOPMOST, "static", NULL, WS_POPUP | WS_VISIBLE, 0, 0, 0, 0, 0, 0, 0, 0);
+    SetWindowPos(p->window, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+    
+    ret = SetEvent(p->window_created);
+    ok(ret, "SetEvent failed, last error %#x.\n", GetLastError());
+
+    while (GetMessageA(&msg, 0, 0, 0))
+    {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    return 0;
+}
+
+static DWORD set_foreground(HWND hwnd)
+{
+    HWND hwnd_fore;
+    DWORD set_id, fore_id, ret;
+
+    hwnd_fore = GetForegroundWindow();
+    set_id = GetWindowThreadProcessId(hwnd, NULL);
+    fore_id = GetWindowThreadProcessId(hwnd_fore, NULL);
+    trace("%p %08x hwnd %p %08x\n", hwnd_fore, fore_id, hwnd, set_id);
+    ret = AttachThreadInput(set_id, fore_id, TRUE);
+    trace("AttachThreadInput returned %08x\n", ret);
+    ret = ShowWindow(hwnd, SW_SHOWNORMAL);
+    trace("ShowWindow returned %08x\n", ret);
+    ret = SetWindowPos(hwnd, HWND_TOPMOST, 0,0,0,0, SWP_NOSIZE|SWP_NOMOVE);
+    trace("set topmost returned %08x\n", ret);
+    ret = SetWindowPos(hwnd, HWND_NOTOPMOST, 0,0,0,0, SWP_NOSIZE|SWP_NOMOVE);
+    trace("set notopmost returned %08x\n", ret);
+    ret = SetForegroundWindow(hwnd);
+    trace("SetForegroundWindow returned %08x\n", ret);
+    Sleep(250);
+    AttachThreadInput(set_id, fore_id, FALSE);
+    return ret;
 }
 
 static void test_SetForegroundWindow(HWND hwnd)
@@ -3350,8 +3395,46 @@ static void test_SetForegroundWindow(HWND hwnd)
     DestroyWindow(hwnd2);
     check_wnd_state(hwnd, hwnd, hwnd, 0);
 
+    hwnd2 = CreateWindowExA(0, "static", NULL, WS_POPUP, 0, 0, 0, 0, 0, 0, 0, NULL);
+    check_wnd_state(hwnd, hwnd, hwnd, 0);
+
+    set_foreground(hwnd2);
+    check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
+    DestroyWindow(hwnd2);
+
+    hwnd2 = CreateWindowExA(WS_EX_TOPMOST, "static", NULL, WS_POPUP|WS_VISIBLE, 0, 0, 0, 0, 0, 0, 0, NULL);
+    check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
+
+    set_foreground(hwnd);
+    check_wnd_state(hwnd, hwnd, hwnd, 0);
+
+    SetWindowPos(hwnd2, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+    check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
+
+    set_foreground(hwnd);
+    check_wnd_state(hwnd, hwnd, hwnd, 0);
+    DestroyWindow(hwnd2);
+
     hwnd2 = CreateWindowA("static", NULL, WS_POPUP | WS_VISIBLE, 0, 0, 0, 0, 0, 0, 0, 0);
     check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
+
+    thread_params.window_created = CreateEventW(NULL, FALSE, FALSE, NULL);
+    ok(!!thread_params.window_created, "CreateEvent failed, last error %#x.\n", GetLastError());
+    thread = CreateThread(NULL, 0, create_window_thread2, &thread_params, 0, &tid);
+    ok(!!thread, "Failed to create thread, last error %#x.\n", GetLastError());
+    res = WaitForSingleObject(thread_params.window_created, INFINITE);
+    ok(res == WAIT_OBJECT_0, "Wait failed (%#x), last error %#x.\n", res, GetLastError());
+    check_wnd_state(hwnd2, thread_params.window, hwnd2, 0);
+
+    set_foreground(hwnd2);
+    check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
+
+    set_foreground(thread_params.window);
+    check_wnd_state(hwnd2, thread_params.window, hwnd2, 0);
+
+    SendMessageA(thread_params.window, WM_DESTROY, 0, 0);
+    CloseHandle(thread_params.window_created);
+    CloseHandle(thread);
 
     thread_params.window_created = CreateEventW(NULL, FALSE, FALSE, NULL);
     ok(!!thread_params.window_created, "CreateEvent failed, last error %#x.\n", GetLastError());
@@ -3362,9 +3445,6 @@ static void test_SetForegroundWindow(HWND hwnd)
     res = WaitForSingleObject(thread_params.window_created, INFINITE);
     ok(res == WAIT_OBJECT_0, "Wait failed (%#x), last error %#x.\n", res, GetLastError());
     check_wnd_state(hwnd2, thread_params.window, hwnd2, 0);
-
-    SetForegroundWindow(hwnd2);
-    check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
 
     while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) DispatchMessageA(&msg);
     if (0) check_wnd_state(hwnd2, hwnd2, hwnd2, 0);
