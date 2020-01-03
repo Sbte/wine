@@ -486,7 +486,6 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     hr = D3DXCreateFontA(device, 12, 0, FW_DONTCARE, 0, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Tahoma", &font);
     ok(hr == D3D_OK, "D3DXCreateFont returned %#x, expected %#x\n", hr, D3D_OK);
 
-    todo_wine {
     hr = ID3DXFont_PreloadTextA(font, NULL, -1);
     ok(hr == D3DERR_INVALIDCALL, "ID3DXFont_PreloadTextA returned %#x, expected %#x\n", hr, D3DERR_INVALIDCALL);
     hr = ID3DXFont_PreloadTextA(font, NULL, 0);
@@ -512,7 +511,6 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     ok(hr == D3D_OK, "ID3DXFont_PreloadTextW returned %#x, expected %#x\n", hr, D3D_OK);
     hr = ID3DXFont_PreloadTextW(font, L"", -1);
     ok(hr == D3D_OK, "ID3DXFont_PreloadTextW returned %#x, expected %#x\n", hr, D3D_OK);
-    }
 
     check_release((IUnknown*)font, 0);
 

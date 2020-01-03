@@ -394,14 +394,54 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, 
 
 static HRESULT WINAPI ID3DXFontImpl_PreloadTextA(ID3DXFont *iface, const char *string, INT count)
 {
-    FIXME("iface %p, string %s, count %d stub!\n", iface, debugstr_a(string), count);
-    return E_NOTIMPL;
+
+    WCHAR *wstr;
+    HRESULT hr;
+    INT countW;
+    TRACE("iface %p, string %s, count %d\n", iface, debugstr_a(string), count);
+
+    if (!string && count == 0) return D3D_OK;
+    if (!string) return D3DERR_INVALIDCALL;
+
+    countW = MultiByteToWideChar(CP_ACP, 0, string, count < 0 ? -1 : count, NULL, 0);
+
+    wstr = heap_alloc(countW * sizeof(WCHAR));
+    if (!wstr)
+        return E_OUTOFMEMORY;
+
+    MultiByteToWideChar(CP_ACP, 0, string, count < 0 ? -1 : count, wstr, countW);
+
+    hr = ID3DXFont_PreloadTextW(iface, wstr, count);
+
+    heap_free(wstr);
+
+    return hr;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_PreloadTextW(ID3DXFont *iface, const WCHAR *string, INT count)
 {
-    FIXME("iface %p, string %s, count %d stub!\n", iface, debugstr_w(string), count);
-    return E_NOTIMPL;
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    UINT i;
+    WORD *indices;
+
+    TRACE("iface %p, string %s, count %d\n", iface, debugstr_w(string), count);
+
+    if (!string && count == 0) return D3D_OK;
+    if (!string) return D3DERR_INVALIDCALL;
+    if (count < 0) count = lstrlenW(string);
+
+    indices = heap_alloc(count * sizeof(WORD));
+    if (!indices)
+        return E_OUTOFMEMORY;
+
+    GetGlyphIndicesW(font->hdc, string, count, indices, 0);
+
+    for (i = 0; i < count; i++)
+        ID3DXFont_PreloadGlyphs(iface, indices[i], indices[i]);
+
+    heap_free(indices);
+
+    return D3D_OK;
 }
 
 static INT WINAPI ID3DXFontImpl_DrawTextA(ID3DXFont *iface, ID3DXSprite *sprite,
