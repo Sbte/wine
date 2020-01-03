@@ -225,6 +225,8 @@ static inline BOOL is_param_type_sampler(D3DXPARAMETER_TYPE type)
             || type == D3DXPT_SAMPLER3D || type == D3DXPT_SAMPLERCUBE;
 }
 
+UINT make_pow2(UINT num) DECLSPEC_HIDDEN;
+
 struct d3dx_parameter;
 
 enum pres_reg_tables

@@ -31,7 +31,7 @@ static BOOL is_pow2(UINT num)
 }
 
 /* Returns the smallest power of 2 which is greater than or equal to num */
-static UINT make_pow2(UINT num)
+UINT make_pow2(UINT num)
 {
     UINT result = 1;
 

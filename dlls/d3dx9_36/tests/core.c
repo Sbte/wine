@@ -537,7 +537,7 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     hr = ID3DXFont_PreloadCharacters(font, 'b', 'a');
     ok(hr == D3D_OK, "ID3DXFont_PreloadCharacters returned %#x, expected %#x\n", hr, D3D_OK);
     hr = ID3DXFont_PreloadGlyphs(font, 1, 0);
-    todo_wine ok(hr == D3D_OK, "ID3DXFont_PreloadGlyphs returned %#x, expected %#x\n", hr, D3D_OK);
+    ok(hr == D3D_OK, "ID3DXFont_PreloadGlyphs returned %#x, expected %#x\n", hr, D3D_OK);
 
     hr = ID3DXFont_PreloadCharacters(font, 'a', 'a');
     ok(hr == D3D_OK, "ID3DXFont_PreloadCharacters returned %#x, expected %#x\n", hr, D3D_OK);
@@ -613,7 +613,7 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
 
     /* Test multiple textures */
     hr = ID3DXFont_PreloadGlyphs(font, 0, 1000);
-    todo_wine ok(hr == D3D_OK, "ID3DXFont_PreloadGlyphs returned %#x, expected %#x\n", hr, D3D_OK);
+    ok(hr == D3D_OK, "ID3DXFont_PreloadGlyphs returned %#x, expected %#x\n", hr, D3D_OK);
 
     /* Test glyphs that are not rendered */
     for (glyph = 1; glyph < 4; glyph++)

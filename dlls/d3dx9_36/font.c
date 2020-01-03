@@ -22,6 +22,14 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3dx);
 
+struct d3dx_glyph
+{
+    UINT id;
+    RECT blackbox;
+    POINT cellinc;
+    IDirect3DTexture9 *texture;
+};
+
 struct d3dx_font
 {
     ID3DXFont ID3DXFont_iface;
@@ -32,6 +40,14 @@ struct d3dx_font
 
     HDC hdc;
     HFONT hfont;
+
+    struct d3dx_glyph *glyphs;
+    UINT allocated_glyphs, glyph_count;
+
+    IDirect3DTexture9 **textures;
+    UINT texture_count, texture_pos;
+
+    UINT texture_size, glyph_size, glyphs_per_texture;
 };
 
 static inline struct d3dx_font *impl_from_ID3DXFont(ID3DXFont *iface)
@@ -72,11 +88,21 @@ static ULONG WINAPI ID3DXFontImpl_Release(ID3DXFont *iface)
 
     TRACE("%p decreasing refcount to %u\n", iface, ref);
 
-    if(ref==0) {
+    if (!ref)
+    {
+        UINT i;
+        for(i = 0; i < font->texture_count; i++)
+            IDirect3DTexture9_Release(font->textures[i]);
+
+        if (font->textures)
+            heap_free(font->textures);
+
+        heap_free(font->glyphs);
+
         DeleteObject(font->hfont);
         DeleteDC(font->hdc);
         IDirect3DDevice9_Release(font->device);
-        HeapFree(GetProcessHeap(), 0, font);
+        heap_free(font);
     }
     return ref;
 }
@@ -154,10 +180,162 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadCharacters(ID3DXFont *iface, UINT fir
     return S_OK;
 }
 
+static UINT morton_decode(UINT x)
+{
+    x &= 0x55555555;
+    x = (x ^ (x >> 1)) & 0x33333333;
+    x = (x ^ (x >> 2)) & 0x0f0f0f0f;
+    x = (x ^ (x >> 4)) & 0x00ff00ff;
+    x = (x ^ (x >> 8)) & 0x0000ffff;
+    return x;
+}
+
+/* The glyphs are stored in a grid. Cell sizes vary between different font sizes.
+
+   The grid is filled in a Morton order:
+    1   2   5   6  17  18  21  22
+    3   4   7   8  19  20  23  24
+    9  10  13  14  25  26  29  30
+   11  12  15  16  27  28  31  32
+   33  34 ...
+   ...
+   i.e. we try to fill one small square, then three equal-sized squares so that we get one big square, etc...
+
+   The glyphs are positioned around their baseline, which is located at y position glyph_size * i + tmAscent.
+   Concerning the x position, the glyphs are centered around glyph_size * (i + 0.5). */
 static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, UINT last)
 {
-    FIXME("iface %p, first %u, last %u stub!\n", iface, first, last);
-    return E_NOTIMPL;
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    UINT glyph, i, x, y;
+    TEXTMETRICW tm;
+    HRESULT hr;
+
+    TRACE("iface %p, first %u, last %u\n", iface, first, last);
+
+    if (last < first)
+        return D3D_OK;
+
+    ID3DXFont_GetTextMetricsW(iface, &tm);
+
+    for (glyph = first; glyph <= last; glyph++)
+    {
+        DWORD ret, *pixel_data;
+        BYTE *buffer;
+        GLYPHMETRICS metrics;
+        D3DLOCKED_RECT lockrect;
+        MAT2 mat = { {0,1}, {0,0}, {0,0}, {0,1} };
+        UINT stride, offx, offy;
+        IDirect3DTexture9 *current_texture;
+        struct d3dx_glyph *current_glyph;
+
+        /* Check whether the glyph is already preloaded */
+        for (i = 0; i < font->glyph_count; i++)
+            if (font->glyphs[i].id == glyph)
+                break;
+        if (i < font->glyph_count)
+            continue;
+
+        /* Calculate glyph position */
+        offx = morton_decode(font->texture_pos) * font->glyph_size;
+        offy = morton_decode(font->texture_pos >> 1) * font->glyph_size;
+
+        /* Make sure we have enough memory */
+        if (font->glyph_count + 1 > font->allocated_glyphs)
+        {
+            struct d3dx_glyph *new_glyphs;
+            UINT new_allocated_glyphs = font->allocated_glyphs << 1;
+
+            new_glyphs = heap_realloc(font->glyphs, new_allocated_glyphs * sizeof(struct d3dx_glyph));
+            if (!new_glyphs)
+                return E_OUTOFMEMORY;
+
+            font->glyphs = new_glyphs;
+            font->allocated_glyphs = new_allocated_glyphs;
+        }
+
+        current_glyph = font->glyphs + font->glyph_count++;
+        current_glyph->id = glyph;
+        current_glyph->texture = NULL;
+
+        /* Spaces are handled separately */
+        if (glyph > 0 && glyph < 4)
+            continue;
+
+        /* Get the glyph data */
+        ret = GetGlyphOutlineW(font->hdc, glyph, GGO_GLYPH_INDEX | GGO_GRAY8_BITMAP, &metrics, 0, NULL, &mat);
+        if (ret == GDI_ERROR)
+        {
+            WARN("GetGlyphOutlineW failed\n");
+            continue;
+        }
+
+        buffer = heap_alloc(ret);
+        if (!buffer)
+            return E_OUTOFMEMORY;
+
+        GetGlyphOutlineW(font->hdc, glyph, GGO_GLYPH_INDEX | GGO_GRAY8_BITMAP, &metrics, ret, buffer, &mat);
+
+        /* Create a new texture if necessary */
+        if (font->texture_pos == font->glyphs_per_texture)
+        {
+            IDirect3DTexture9 **new_textures;
+            UINT new_texture_count = font->texture_count + 1;
+
+            new_textures = heap_realloc(font->textures, new_texture_count * sizeof(IDirect3DTexture9 *));
+            if (!new_textures)
+            {
+                heap_free(buffer);
+                return E_OUTOFMEMORY;
+            }
+
+            font->textures = new_textures;
+
+            if (FAILED(hr = IDirect3DDevice9_CreateTexture(font->device, font->texture_size,
+                                                           font->texture_size, 0, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+                                                           &font->textures[font->texture_count], NULL)))
+            {
+                heap_free(buffer);
+                return hr;
+            }
+
+            font->texture_count++;
+            font->texture_pos = 0;
+            offx = 0;
+            offy = 0;
+        }
+
+        current_texture = font->textures[font->texture_count - 1];
+
+        /* Fill in glyph data */
+        current_glyph->blackbox.left   = offx - metrics.gmptGlyphOrigin.x + font->glyph_size / 2 - (metrics.gmBlackBoxX + 3) / 2;
+        current_glyph->blackbox.top    = offy - metrics.gmptGlyphOrigin.y + tm.tmAscent + 1;
+        current_glyph->blackbox.right  = current_glyph->blackbox.left + metrics.gmBlackBoxX + 2;
+        current_glyph->blackbox.bottom = current_glyph->blackbox.top + metrics.gmBlackBoxY + 2;
+        current_glyph->cellinc.x       = metrics.gmptGlyphOrigin.x - 1;
+        current_glyph->cellinc.y       = tm.tmAscent - metrics.gmptGlyphOrigin.y - 1;
+        current_glyph->texture         = current_texture;
+
+        /* Copy glyph data to the texture */
+        if (FAILED(hr = IDirect3DTexture9_LockRect(current_texture, 0, &lockrect, &current_glyph->blackbox, 0)))
+        {
+            heap_free(buffer);
+            return hr;
+        }
+
+        pixel_data = lockrect.pBits;
+        stride = (metrics.gmBlackBoxX + 3) & ~3;
+        for (y = 0; y < metrics.gmBlackBoxY; y++)
+            for (x = 0; x < metrics.gmBlackBoxX; x++)
+                pixel_data[x + y * lockrect.Pitch / 4] = buffer[x + y * stride] * 255 / 64 + 0xffffff00;
+
+        IDirect3DTexture9_UnlockRect(current_texture, 0);
+
+        heap_free(buffer);
+
+        font->texture_pos++;
+    }
+
+    return D3D_OK;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_PreloadTextA(ID3DXFont *iface, const char *string, INT count)
@@ -294,6 +472,7 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
     D3DDISPLAYMODE mode;
     struct d3dx_font *object;
     IDirect3D9 *d3d;
+    TEXTMETRICW metrics;
     HRESULT hr;
 
     TRACE("(%p, %p, %p)\n", device, desc, font);
@@ -305,39 +484,66 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
     IDirect3DDevice9_GetCreationParameters(device, &cpars);
     IDirect3DDevice9_GetDisplayMode(device, 0, &mode);
     hr = IDirect3D9_CheckDeviceFormat(d3d, cpars.AdapterOrdinal, cpars.DeviceType, mode.Format, 0, D3DRTYPE_TEXTURE, D3DFMT_A8R8G8B8);
-    if(FAILED(hr)) {
+    if (FAILED(hr))
+    {
         IDirect3D9_Release(d3d);
         return D3DXERR_INVALIDDATA;
     }
     IDirect3D9_Release(d3d);
 
-    object = HeapAlloc(GetProcessHeap(), 0, sizeof(struct d3dx_font));
-    if(object==NULL) {
-        *font=NULL;
+    object = heap_alloc_zero(sizeof(struct d3dx_font));
+    if (!object)
+    {
+        *font = NULL;
         return E_OUTOFMEMORY;
     }
     object->ID3DXFont_iface.lpVtbl = &D3DXFont_Vtbl;
-    object->ref=1;
-    object->device=device;
-    object->desc=*desc;
+    object->ref = 1;
+    object->device = device;
+    object->desc = *desc;
 
     object->hdc = CreateCompatibleDC(NULL);
-    if( !object->hdc ) {
-        HeapFree(GetProcessHeap(), 0, object);
+    if (!object->hdc)
+    {
+        heap_free(object);
         return D3DXERR_INVALIDDATA;
     }
 
     object->hfont = CreateFontW(desc->Height, desc->Width, 0, 0, desc->Weight, desc->Italic, FALSE, FALSE, desc->CharSet,
                                 desc->OutputPrecision, CLIP_DEFAULT_PRECIS, desc->Quality, desc->PitchAndFamily, desc->FaceName);
-    if( !object->hfont ) {
+    if (!object->hfont)
+    {
         DeleteDC(object->hdc);
-        HeapFree(GetProcessHeap(), 0, object);
+        heap_free(object);
         return D3DXERR_INVALIDDATA;
     }
     SelectObject(object->hdc, object->hfont);
 
+    /* allocate common memory usage */
+    object->allocated_glyphs = 32;
+    object->glyphs = heap_alloc(object->allocated_glyphs * sizeof(struct d3dx_glyph));
+    if (!object->glyphs)
+    {
+        DeleteObject(object->hfont);
+        DeleteDC(object->hdc);
+        heap_free(object);
+        *font = NULL;
+        return E_OUTOFMEMORY;
+    }
+
+    GetTextMetricsW(object->hdc, &metrics);
+
+    object->glyph_size = make_pow2(metrics.tmHeight);
+
+    object->texture_size = make_pow2(object->glyph_size);
+    if (object->glyph_size < 256)
+        object->texture_size = min(256, object->texture_size << 4);
+
+    object->glyphs_per_texture = object->texture_size * object->texture_size / object->glyph_size / object->glyph_size;
+    object->texture_pos = object->glyphs_per_texture;
+
     IDirect3DDevice9_AddRef(device);
-    *font=&object->ID3DXFont_iface;
+    *font = &object->ID3DXFont_iface;
 
     return D3D_OK;
 }
