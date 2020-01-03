@@ -524,16 +524,15 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     hdc = ID3DXFont_GetDC(font);
     ok(hdc != NULL, "ID3DXFont_GetDC returned an invalid handle\n");
 
-    todo_wine {
     hr = ID3DXFont_GetGlyphData(font, 0, NULL, &blackbox, &cellinc);
     ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
     hr = ID3DXFont_GetGlyphData(font, 0, &texture, NULL, &cellinc);
-    if(SUCCEEDED(hr)) check_release((IUnknown*)texture, 1);
+    check_release((IUnknown*)texture, 1);
     ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
     hr = ID3DXFont_GetGlyphData(font, 0, &texture, &blackbox, NULL);
-    if(SUCCEEDED(hr)) check_release((IUnknown*)texture, 1);
+    check_release((IUnknown*)texture, 1);
     ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
-    }
+
     hr = ID3DXFont_PreloadCharacters(font, 'b', 'a');
     ok(hr == D3D_OK, "ID3DXFont_PreloadCharacters returned %#x, expected %#x\n", hr, D3D_OK);
     hr = ID3DXFont_PreloadGlyphs(font, 1, 0);
@@ -553,59 +552,57 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     for(c = 'a'; c <= 'z'; c++)
     {
         DWORD ret;
+        DWORD levels;
+        TEXTMETRICW tm;
+        D3DSURFACE_DESC desc;
+        GLYPHMETRICS metrics;
+        MAT2 mat = { {0,1}, {0,0}, {0,0}, {0,1} };
+        UINT posx, posy, glyph_size;
 
         ret = GetGlyphIndicesA(hdc, &c, 1, &glyph, 0);
         ok(ret != GDI_ERROR, "GetGlyphIndicesA failed\n");
 
         hr = ID3DXFont_GetGlyphData(font, glyph, &texture, &blackbox, &cellinc);
-        todo_wine ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
-        if(SUCCEEDED(hr)) {
-            DWORD levels;
-            TEXTMETRICW tm;
-            D3DSURFACE_DESC desc;
-            GLYPHMETRICS metrics;
-            UINT posx, posy, glyph_size;
-            MAT2 mat = { {0,1}, {0,0}, {0,0}, {0,1} };
+        ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
 
-            levels = IDirect3DTexture9_GetLevelCount(texture);
-            ok(levels == 5, "Character %c, got levels %u, expected %u\n", c, levels, 5);
+        levels = IDirect3DTexture9_GetLevelCount(texture);
+        todo_wine ok(levels == 5, "Character %c, got levels %u, expected %u\n", c, levels, 5);
 
-            hr = IDirect3DTexture9_GetLevelDesc(texture, 0, &desc);
-            ok(hr == D3D_OK, "IDirect3DTexture9_GetLevelDesc failed\n");
-            ok(desc.Format == D3DFMT_A8R8G8B8, "Character %c, got format %#x, expected %#x\n", c, desc.Format, D3DFMT_A8R8G8B8);
-            ok(desc.Usage == 0, "Character %c, got usage %#x, expected %#x\n", c, desc.Usage, 0);
-            ok(desc.Width == 256, "Character %c, got width %u, expected %u\n", c, desc.Width, 256);
-            ok(desc.Height == 256, "Character %c, got height %u, expected %u\n", c, desc.Height, 256);
-            ok(desc.Pool == D3DPOOL_MANAGED, "Character %c, got pool %u, expected %u\n", c, desc.Pool, D3DPOOL_MANAGED);
+        hr = IDirect3DTexture9_GetLevelDesc(texture, 0, &desc);
+        ok(hr == D3D_OK, "IDirect3DTexture9_GetLevelDesc failed\n");
+        ok(desc.Format == D3DFMT_A8R8G8B8, "Character %c, got format %#x, expected %#x\n", c, desc.Format, D3DFMT_A8R8G8B8);
+        ok(desc.Usage == 0, "Character %c, got usage %#x, expected %#x\n", c, desc.Usage, 0);
+        ok(desc.Width == 256, "Character %c, got width %u, expected %u\n", c, desc.Width, 256);
+        ok(desc.Height == 256, "Character %c, got height %u, expected %u\n", c, desc.Height, 256);
+        ok(desc.Pool == D3DPOOL_MANAGED, "Character %c, got pool %u, expected %u\n", c, desc.Pool, D3DPOOL_MANAGED);
 
-            ret = GetGlyphOutlineW(hdc, glyph, GGO_GLYPH_INDEX | GGO_METRICS, &metrics, 0, NULL, &mat);
-            ok(ret != GDI_ERROR, "GetGlyphOutlineW failed\n");
+        ret = GetGlyphOutlineW(hdc, glyph, GGO_GLYPH_INDEX | GGO_METRICS, &metrics, 0, NULL, &mat);
+        ok(ret != GDI_ERROR, "GetGlyphOutlineW failed\n");
 
-            /* Calculate glyph size */
-            ID3DXFont_GetTextMetricsW(font, &tm);
-            ok(blackbox.right - blackbox.left == metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
-               c, blackbox.right - blackbox.left, metrics.gmBlackBoxX + 2);
-            ok(blackbox.bottom - blackbox.top == metrics.gmBlackBoxY + 2, "Character %c, got %d, expected %d\n",
-               c, blackbox.bottom - blackbox.top, metrics.gmBlackBoxY + 2);
-            ok(cellinc.x == metrics.gmptGlyphOrigin.x - 1, "Character %c, got %d, expected %d\n",
-               c, cellinc.x, metrics.gmptGlyphOrigin.x - 1);
-            ok(cellinc.y == tm.tmAscent - metrics.gmptGlyphOrigin.y - 1, "Character %c, got %d, expected %d\n",
-               c, cellinc.y, tm.tmAscent - metrics.gmptGlyphOrigin.y - 1);
+        /* Calculate glyph size */
+        ID3DXFont_GetTextMetricsW(font, &tm);
+        ok(blackbox.right - blackbox.left == metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
+           c, blackbox.right - blackbox.left, metrics.gmBlackBoxX + 2);
+        ok(blackbox.bottom - blackbox.top == metrics.gmBlackBoxY + 2, "Character %c, got %d, expected %d\n",
+           c, blackbox.bottom - blackbox.top, metrics.gmBlackBoxY + 2);
+        ok(cellinc.x == metrics.gmptGlyphOrigin.x - 1, "Character %c, got %d, expected %d\n",
+           c, cellinc.x, metrics.gmptGlyphOrigin.x - 1);
+        ok(cellinc.y == tm.tmAscent - metrics.gmptGlyphOrigin.y - 1, "Character %c, got %d, expected %d\n",
+           c, cellinc.y, tm.tmAscent - metrics.gmptGlyphOrigin.y - 1);
 
-            /* Calculate glyph position */
-            glyph_size = 16;
-            posx = morton_decode(c - 'a') * glyph_size - metrics.gmptGlyphOrigin.x + glyph_size / 2 - (metrics.gmBlackBoxX + 3) / 2;
-            posy = morton_decode((c - 'a') >> 1) * glyph_size - metrics.gmptGlyphOrigin.y + tm.tmAscent + 1;
+        /* Calculate glyph position */
+        glyph_size = 16;
+        posx = morton_decode(c - 'a') * glyph_size - metrics.gmptGlyphOrigin.x + glyph_size / 2 - (metrics.gmBlackBoxX + 3) / 2;
+        posy = morton_decode((c - 'a') >> 1) * glyph_size - metrics.gmptGlyphOrigin.y + tm.tmAscent + 1;
 
-            ok(blackbox.left == posx, "Character %c, got %d, expected %d\n", c, blackbox.left, posx);
-            ok(blackbox.right == posx + metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
-               c, blackbox.right, posx + metrics.gmBlackBoxX + 2);
-            ok(blackbox.top == posy, "Character %c, got %d, expected %d\n", c, blackbox.top, posy);
-            ok(blackbox.bottom == posy + metrics.gmBlackBoxY + 2, "Character %c, got %d, expected %d\n",
-               c, blackbox.bottom, posy + metrics.gmBlackBoxY + 2);
+        ok(blackbox.left == posx, "Character %c, got %d, expected %d\n", c, blackbox.left, posx);
+        ok(blackbox.right == posx + metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
+           c, blackbox.right, posx + metrics.gmBlackBoxX + 2);
+        ok(blackbox.top == posy, "Character %c, got %d, expected %d\n", c, blackbox.top, posy);
+        ok(blackbox.bottom == posy + metrics.gmBlackBoxY + 2, "Character %c, got %d, expected %d\n",
+           c, blackbox.bottom, posy + metrics.gmBlackBoxY + 2);
 
-            check_release((IUnknown*)texture, 1);
-        }
+        check_release((IUnknown*)texture, 1);
     }
 
     hr = ID3DXFont_PreloadCharacters(font, 'a', 'z');
@@ -620,8 +617,8 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     {
         texture = (IDirect3DTexture9*)0xdeadbeef;
         hr = ID3DXFont_GetGlyphData(font, glyph, &texture, &blackbox, &cellinc);
-        todo_wine ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
-        todo_wine ok(!texture, "Got unexpected texture\n");
+        ok(hr == D3D_OK, "ID3DXFont_GetGlyphData returned %#x, expected %#x\n", hr, D3D_OK);
+        ok(!texture, "Got unexpected texture\n");
     }
 
     check_release((IUnknown*)font, 0);
@@ -630,6 +627,8 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     {
         DWORD ret;
         char c = 'a';
+        DWORD levels;
+        D3DSURFACE_DESC desc;
 
         hr = D3DXCreateFontA(device, tests[i].font_height, 0, FW_DONTCARE, 0, FALSE, DEFAULT_CHARSET,
                 OUT_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Tahoma", &font);
@@ -641,28 +640,26 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
         ok(ret != GDI_ERROR, "Test %d, GetGlyphIndicesA failed\n", i);
 
         hr = ID3DXFont_GetGlyphData(font, glyph, &texture, NULL, NULL);
-        todo_wine ok(hr == D3D_OK, "Test %d, ID3DXFont_GetGlyphData returned %#x, expected %#x\n", i, hr, D3D_OK);
-        if(SUCCEEDED(hr)) {
-            DWORD levels;
-            D3DSURFACE_DESC desc;
+        ok(hr == D3D_OK, "Test %d, ID3DXFont_GetGlyphData returned %#x, expected %#x\n", i, hr, D3D_OK);
 
-            levels = IDirect3DTexture9_GetLevelCount(texture);
-            ok(levels == tests[i].expected_levels, "Test %d, got levels %u, expected %u\n",
-                    i, levels, tests[i].expected_levels);
-            hr = IDirect3DTexture9_GetLevelDesc(texture, 0, &desc);
-            ok(hr == D3D_OK, "Test %d, IDirect3DTexture9_GetLevelDesc failed\n", i);
-            ok(desc.Format == D3DFMT_A8R8G8B8, "Test %d, got format %#x, expected %#x\n",
-                    i, desc.Format, D3DFMT_A8R8G8B8);
-            ok(desc.Usage == 0, "Test %d, got usage %#x, expected %#x\n", i, desc.Usage, 0);
-            ok(desc.Width == tests[i].expected_size, "Test %d, got width %u, expected %u\n",
-                    i, desc.Width, tests[i].expected_size);
-            ok(desc.Height == tests[i].expected_size, "Test %d, got height %u, expected %u\n",
-                    i, desc.Height, tests[i].expected_size);
-            ok(desc.Pool == D3DPOOL_MANAGED, "Test %d, got pool %u, expected %u\n",
-                    i, desc.Pool, D3DPOOL_MANAGED);
+        levels = IDirect3DTexture9_GetLevelCount(texture);
+        todo_wine_if(tests[i].expected_levels < 9)
+        ok(levels == tests[i].expected_levels, "Test %d, got levels %u, expected %u\n",
+           i, levels, tests[i].expected_levels);
 
-            IDirect3DTexture9_Release(texture);
-        }
+        hr = IDirect3DTexture9_GetLevelDesc(texture, 0, &desc);
+        ok(hr == D3D_OK, "Test %d, IDirect3DTexture9_GetLevelDesc failed\n", i);
+        ok(desc.Format == D3DFMT_A8R8G8B8, "Test %d, got format %#x, expected %#x\n",
+           i, desc.Format, D3DFMT_A8R8G8B8);
+        ok(desc.Usage == 0, "Test %d, got usage %#x, expected %#x\n", i, desc.Usage, 0);
+        ok(desc.Width == tests[i].expected_size, "Test %d, got width %u, expected %u\n",
+           i, desc.Width, tests[i].expected_size);
+        ok(desc.Height == tests[i].expected_size, "Test %d, got height %u, expected %u\n",
+           i, desc.Height, tests[i].expected_size);
+        ok(desc.Pool == D3DPOOL_MANAGED, "Test %d, got pool %u, expected %u\n",
+           i, desc.Pool, D3DPOOL_MANAGED);
+
+        check_release((IUnknown*)texture, 1);
 
         /* ID3DXFontImpl_DrawText */
         D3DXCreateSprite(device, &sprite);

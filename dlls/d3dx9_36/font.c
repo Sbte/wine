@@ -169,9 +169,32 @@ static HDC WINAPI ID3DXFontImpl_GetDC(ID3DXFont *iface)
 static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
         IDirect3DTexture9 **texture, RECT *blackbox, POINT *cellinc)
 {
-    FIXME("iface %p, glyph %#x, texture %p, blackbox %p, cellinc %p stub!\n",
-            iface, glyph, texture, blackbox, cellinc);
-    return E_NOTIMPL;
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    HRESULT hr;
+    int i;
+
+    TRACE("iface %p, glyph %#x, texture %p, blackbox %p, cellinc %p\n",
+          iface, glyph, texture, blackbox, cellinc);
+
+    hr = ID3DXFont_PreloadGlyphs(iface, glyph, glyph);
+    if (FAILED(hr))
+        return hr;
+
+    for (i = 0; i < font->glyph_count; i++)
+        if (font->glyphs[i].id == glyph)
+        {
+            if (cellinc)
+                *cellinc = font->glyphs[i].cellinc;
+            if (blackbox)
+                *blackbox = font->glyphs[i].blackbox;
+            if (texture)
+                *texture = font->glyphs[i].texture;
+            if (texture && *texture)
+                IDirect3DTexture9_AddRef(font->glyphs[i].texture);
+            return D3D_OK;
+        }
+
+    return D3DXERR_INVALIDDATA;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_PreloadCharacters(ID3DXFont *iface, UINT first, UINT last)
