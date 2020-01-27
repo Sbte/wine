@@ -303,6 +303,16 @@ static void test_ID3DXSprite(IDirect3DDevice9 *device)
     check_release((IUnknown*)tex1, 0);
 }
 
+static UINT morton_decode(UINT x)
+{
+    x &= 0x55555555;
+    x = (x ^ (x >> 1)) & 0x33333333;
+    x = (x ^ (x >> 2)) & 0x0f0f0f0f;
+    x = (x ^ (x >> 4)) & 0x00ff00ff;
+    x = (x ^ (x >> 8)) & 0x0000ffff;
+    return x;
+}
+
 static void test_ID3DXFont(IDirect3DDevice9 *device)
 {
     static const WCHAR testW[] = L"test";
@@ -532,7 +542,16 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     hr = ID3DXFont_PreloadCharacters(font, 'a', 'a');
     ok(hr == D3D_OK, "ID3DXFont_PreloadCharacters returned %#x, expected %#x\n", hr, D3D_OK);
 
-    for(c = 'b'; c <= 'z'; c++) {
+    check_release((IUnknown*)font, 0);
+
+    hr = D3DXCreateFontA(device, 12, 0, FW_DONTCARE, 0, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Tahoma", &font);
+    ok(hr == D3D_OK, "D3DXCreateFont returned %#x, expected %#x\n", hr, D3D_OK);
+
+    hdc = ID3DXFont_GetDC(font);
+    ok(hdc != NULL, "ID3DXFont_GetDC returned an invalid handle\n");
+
+    for(c = 'a'; c <= 'z'; c++)
+    {
         DWORD ret;
 
         ret = GetGlyphIndicesA(hdc, &c, 1, &glyph, 0);
@@ -545,6 +564,7 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
             TEXTMETRICW tm;
             D3DSURFACE_DESC desc;
             GLYPHMETRICS metrics;
+            UINT posx, posy, glyph_size;
             MAT2 mat = { {0,1}, {0,0}, {0,0}, {0,1} };
 
             levels = IDirect3DTexture9_GetLevelCount(texture);
@@ -561,6 +581,7 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
             ret = GetGlyphOutlineW(hdc, glyph, GGO_GLYPH_INDEX | GGO_METRICS, &metrics, 0, NULL, &mat);
             ok(ret != GDI_ERROR, "GetGlyphOutlineW failed\n");
 
+            /* Calculate glyph size */
             ID3DXFont_GetTextMetricsW(font, &tm);
             ok(blackbox.right - blackbox.left == metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
                c, blackbox.right - blackbox.left, metrics.gmBlackBoxX + 2);
@@ -570,6 +591,18 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
                c, cellinc.x, metrics.gmptGlyphOrigin.x - 1);
             ok(cellinc.y == tm.tmAscent - metrics.gmptGlyphOrigin.y - 1, "Character %c, got %d, expected %d\n",
                c, cellinc.y, tm.tmAscent - metrics.gmptGlyphOrigin.y - 1);
+
+            /* Calculate glyph position */
+            glyph_size = 16;
+            posx = morton_decode(c - 'a') * glyph_size - metrics.gmptGlyphOrigin.x + glyph_size / 2 - (metrics.gmBlackBoxX + 3) / 2;
+            posy = morton_decode((c - 'a') >> 1) * glyph_size - metrics.gmptGlyphOrigin.y + tm.tmAscent + 1;
+
+            ok(blackbox.left == posx, "Character %c, got %d, expected %d\n", c, blackbox.left, posx);
+            ok(blackbox.right == posx + metrics.gmBlackBoxX + 2, "Character %c, got %d, expected %d\n",
+               c, blackbox.right, posx + metrics.gmBlackBoxX + 2);
+            ok(blackbox.top == posy, "Character %c, got %d, expected %d\n", c, blackbox.top, posy);
+            ok(blackbox.bottom == posy + metrics.gmBlackBoxY + 2, "Character %c, got %d, expected %d\n",
+               c, blackbox.bottom, posy + metrics.gmBlackBoxY + 2);
 
             check_release((IUnknown*)texture, 1);
         }
