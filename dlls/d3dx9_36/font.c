@@ -32,6 +32,8 @@ struct d3dx_glyph
     RECT blackbox;
     POINT cellinc;
     IDirect3DTexture9 *texture;
+
+    struct wine_rb_entry entry;
 };
 
 struct d3dx_font
@@ -45,14 +47,28 @@ struct d3dx_font
     HDC hdc;
     HFONT hfont;
 
-    struct d3dx_glyph *glyphs;
-    UINT allocated_glyphs, glyph_count;
+    struct wine_rb_tree glyph_tree;
 
     IDirect3DTexture9 **textures;
     UINT texture_count, texture_pos;
 
     UINT texture_size, glyph_size, glyphs_per_texture;
 };
+
+static int glyph_rb_compare(const void *key, const struct wine_rb_entry *entry)
+{
+    struct d3dx_glyph *glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+    const UINT *id = key;
+
+    return *id - glyph->id;
+}
+
+static void glyph_rb_free(struct wine_rb_entry *entry, void *context)
+{
+    struct d3dx_glyph *glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+
+    heap_free(glyph);
+}
 
 static inline struct d3dx_font *impl_from_ID3DXFont(ID3DXFont *iface)
 {
@@ -101,7 +117,7 @@ static ULONG WINAPI ID3DXFontImpl_Release(ID3DXFont *iface)
         if (font->textures)
             heap_free(font->textures);
 
-        heap_free(font->glyphs);
+        wine_rb_destroy(&font->glyph_tree, glyph_rb_free, NULL);
 
         DeleteObject(font->hfont);
         DeleteDC(font->hdc);
@@ -174,8 +190,9 @@ static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
         IDirect3DTexture9 **texture, RECT *blackbox, POINT *cellinc)
 {
     struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    struct wine_rb_entry *entry;
+    struct d3dx_glyph *current_glyph;
     HRESULT hr;
-    int i;
 
     TRACE("iface %p, glyph %#x, texture %p, blackbox %p, cellinc %p\n",
           iface, glyph, texture, blackbox, cellinc);
@@ -184,19 +201,20 @@ static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
     if (FAILED(hr))
         return hr;
 
-    for (i = 0; i < font->glyph_count; i++)
-        if (font->glyphs[i].id == glyph)
-        {
-            if (cellinc)
-                *cellinc = font->glyphs[i].cellinc;
-            if (blackbox)
-                *blackbox = font->glyphs[i].blackbox;
-            if (texture)
-                *texture = font->glyphs[i].texture;
-            if (texture && *texture)
-                IDirect3DTexture9_AddRef(font->glyphs[i].texture);
-            return D3D_OK;
-        }
+    entry = wine_rb_get(&font->glyph_tree, &glyph);
+    if (entry)
+    {
+        current_glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+        if (cellinc)
+            *cellinc = current_glyph->cellinc;
+        if (blackbox)
+            *blackbox = current_glyph->blackbox;
+        if (texture)
+            *texture = current_glyph->texture;
+        if (texture && *texture)
+            IDirect3DTexture9_AddRef(current_glyph->texture);
+        return D3D_OK;
+    }
 
     return D3DXERR_INVALIDDATA;
 }
@@ -264,7 +282,7 @@ static UINT morton_decode(UINT x)
 static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, UINT last)
 {
     struct d3dx_font *font = impl_from_ID3DXFont(iface);
-    UINT glyph, i, x, y;
+    UINT glyph, x, y;
     TEXTMETRICW tm;
     HRESULT hr;
 
@@ -287,33 +305,20 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, 
         struct d3dx_glyph *current_glyph;
 
         /* Check whether the glyph is already preloaded */
-        for (i = 0; i < font->glyph_count; i++)
-            if (font->glyphs[i].id == glyph)
-                break;
-        if (i < font->glyph_count)
+        if (wine_rb_get(&font->glyph_tree, &glyph))
             continue;
 
         /* Calculate glyph position */
         offx = morton_decode(font->texture_pos) * font->glyph_size;
         offy = morton_decode(font->texture_pos >> 1) * font->glyph_size;
 
-        /* Make sure we have enough memory */
-        if (font->glyph_count + 1 > font->allocated_glyphs)
-        {
-            struct d3dx_glyph *new_glyphs;
-            UINT new_allocated_glyphs = font->allocated_glyphs << 1;
+        current_glyph = heap_alloc(sizeof(struct d3dx_glyph));
+        if (!current_glyph)
+            return E_OUTOFMEMORY;
 
-            new_glyphs = heap_realloc(font->glyphs, new_allocated_glyphs * sizeof(struct d3dx_glyph));
-            if (!new_glyphs)
-                return E_OUTOFMEMORY;
-
-            font->glyphs = new_glyphs;
-            font->allocated_glyphs = new_allocated_glyphs;
-        }
-
-        current_glyph = font->glyphs + font->glyph_count++;
         current_glyph->id = glyph;
         current_glyph->texture = NULL;
+        wine_rb_put(&font->glyph_tree, &current_glyph->id, &current_glyph->entry);
 
         /* Spaces are handled separately */
         if (glyph > 0 && glyph < 4)
@@ -974,17 +979,7 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
     }
     SelectObject(object->hdc, object->hfont);
 
-    /* allocate common memory usage */
-    object->allocated_glyphs = 32;
-    object->glyphs = heap_alloc(object->allocated_glyphs * sizeof(struct d3dx_glyph));
-    if (!object->glyphs)
-    {
-        DeleteObject(object->hfont);
-        DeleteDC(object->hdc);
-        heap_free(object);
-        *font = NULL;
-        return E_OUTOFMEMORY;
-    }
+    wine_rb_init(&object->glyph_tree, glyph_rb_compare);
 
     GetTextMetricsW(object->hdc, &metrics);
 
