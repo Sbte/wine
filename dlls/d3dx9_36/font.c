@@ -389,7 +389,7 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, 
         stride = (metrics.gmBlackBoxX + 3) & ~3;
         for (y = 0; y < metrics.gmBlackBoxY; y++)
             for (x = 0; x < metrics.gmBlackBoxX; x++)
-                pixel_data[x + y * lockrect.Pitch / 4] = buffer[x + y * stride] * 255 / 64 + 0xffffff00;
+                pixel_data[x + y * lockrect.Pitch / 4] = ((buffer[x + y * stride] * 255 / 64) << 24) + 0xffffff;
 
         IDirect3DTexture9_UnlockRect(current_texture, 0);
 
