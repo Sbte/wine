@@ -191,12 +191,31 @@ static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
 {
     struct d3dx_font *font = impl_from_ID3DXFont(iface);
     struct wine_rb_entry *entry;
-    struct d3dx_glyph *current_glyph;
     HRESULT hr;
 
     TRACE("iface %p, glyph %#x, texture %p, blackbox %p, cellinc %p\n",
           iface, glyph, texture, blackbox, cellinc);
 
+    /* If the glyph is already present, we only have to do a lookup once */
+    entry = wine_rb_get(&font->glyph_tree, &glyph);
+    if (entry)
+    {
+        struct d3dx_glyph *current_glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+
+        if (cellinc)
+            *cellinc = current_glyph->cellinc;
+        if (blackbox)
+            *blackbox = current_glyph->blackbox;
+        if (texture)
+        {
+            *texture = current_glyph->texture;
+            if (*texture)
+                IDirect3DTexture9_AddRef(current_glyph->texture);
+        }
+        return D3D_OK;
+    }
+
+    /* Load the glyph and do the lookup again */
     hr = ID3DXFont_PreloadGlyphs(iface, glyph, glyph);
     if (FAILED(hr))
         return hr;
@@ -204,15 +223,18 @@ static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
     entry = wine_rb_get(&font->glyph_tree, &glyph);
     if (entry)
     {
-        current_glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+        struct d3dx_glyph *current_glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
+
         if (cellinc)
             *cellinc = current_glyph->cellinc;
         if (blackbox)
             *blackbox = current_glyph->blackbox;
         if (texture)
+        {
             *texture = current_glyph->texture;
-        if (texture && *texture)
-            IDirect3DTexture9_AddRef(current_glyph->texture);
+            if (*texture)
+                IDirect3DTexture9_AddRef(current_glyph->texture);
+        }
         return D3D_OK;
     }
 
