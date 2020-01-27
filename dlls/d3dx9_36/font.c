@@ -59,85 +59,85 @@ static HRESULT WINAPI ID3DXFontImpl_QueryInterface(ID3DXFont *iface, REFIID riid
 
 static ULONG WINAPI ID3DXFontImpl_AddRef(ID3DXFont *iface)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
-    ULONG ref=InterlockedIncrement(&This->ref);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    ULONG ref = InterlockedIncrement(&font->ref);
     TRACE("%p increasing refcount to %u\n", iface, ref);
     return ref;
 }
 
 static ULONG WINAPI ID3DXFontImpl_Release(ID3DXFont *iface)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
-    ULONG ref=InterlockedDecrement(&This->ref);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
+    ULONG ref = InterlockedDecrement(&font->ref);
 
     TRACE("%p decreasing refcount to %u\n", iface, ref);
 
     if(ref==0) {
-        DeleteObject(This->hfont);
-        DeleteDC(This->hdc);
-        IDirect3DDevice9_Release(This->device);
-        HeapFree(GetProcessHeap(), 0, This);
+        DeleteObject(font->hfont);
+        DeleteDC(font->hdc);
+        IDirect3DDevice9_Release(font->device);
+        HeapFree(GetProcessHeap(), 0, font);
     }
     return ref;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_GetDevice(ID3DXFont *iface, IDirect3DDevice9 **device)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
 
     TRACE("iface %p, device %p\n", iface, device);
 
     if( !device ) return D3DERR_INVALIDCALL;
-    *device = This->device;
-    IDirect3DDevice9_AddRef(This->device);
+    *device = font->device;
+    IDirect3DDevice9_AddRef(font->device);
 
     return D3D_OK;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_GetDescA(ID3DXFont *iface, D3DXFONT_DESCA *desc)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
 
     TRACE("iface %p, desc %p\n", iface, desc);
 
     if( !desc ) return D3DERR_INVALIDCALL;
-    memcpy(desc, &This->desc, FIELD_OFFSET(D3DXFONT_DESCA, FaceName));
-    WideCharToMultiByte(CP_ACP, 0, This->desc.FaceName, -1, desc->FaceName, ARRAY_SIZE(desc->FaceName), NULL, NULL);
+    memcpy(desc, &font->desc, FIELD_OFFSET(D3DXFONT_DESCA, FaceName));
+    WideCharToMultiByte(CP_ACP, 0, font->desc.FaceName, -1, desc->FaceName, ARRAY_SIZE(desc->FaceName), NULL, NULL);
 
     return D3D_OK;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_GetDescW(ID3DXFont *iface, D3DXFONT_DESCW *desc)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
 
     TRACE("iface %p, desc %p\n", iface, desc);
 
     if( !desc ) return D3DERR_INVALIDCALL;
-    *desc = This->desc;
+    *desc = font->desc;
 
     return D3D_OK;
 }
 
 static BOOL WINAPI ID3DXFontImpl_GetTextMetricsA(ID3DXFont *iface, TEXTMETRICA *metrics)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
     TRACE("iface %p, metrics %p\n", iface, metrics);
-    return GetTextMetricsA(This->hdc, metrics);
+    return GetTextMetricsA(font->hdc, metrics);
 }
 
 static BOOL WINAPI ID3DXFontImpl_GetTextMetricsW(ID3DXFont *iface, TEXTMETRICW *metrics)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
     TRACE("iface %p, metrics %p\n", iface, metrics);
-    return GetTextMetricsW(This->hdc, metrics);
+    return GetTextMetricsW(font->hdc, metrics);
 }
 
 static HDC WINAPI ID3DXFontImpl_GetDC(ID3DXFont *iface)
 {
-    struct d3dx_font *This = impl_from_ID3DXFont(iface);
+    struct d3dx_font *font = impl_from_ID3DXFont(iface);
     TRACE("iface %p\n", iface);
-    return This->hdc;
+    return font->hdc;
 }
 
 static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
