@@ -43,6 +43,7 @@ struct d3dx_font
 
     IDirect3DDevice9 *device;
     D3DXFONT_DESCW desc;
+    TEXTMETRICW metrics;
 
     HDC hdc;
     HFONT hfont;
@@ -196,26 +197,6 @@ static HRESULT WINAPI ID3DXFontImpl_GetGlyphData(ID3DXFont *iface, UINT glyph,
     TRACE("iface %p, glyph %#x, texture %p, blackbox %p, cellinc %p\n",
           iface, glyph, texture, blackbox, cellinc);
 
-    /* If the glyph is already present, we only have to do a lookup once */
-    entry = wine_rb_get(&font->glyph_tree, &glyph);
-    if (entry)
-    {
-        struct d3dx_glyph *current_glyph = WINE_RB_ENTRY_VALUE(entry, struct d3dx_glyph, entry);
-
-        if (cellinc)
-            *cellinc = current_glyph->cellinc;
-        if (blackbox)
-            *blackbox = current_glyph->blackbox;
-        if (texture)
-        {
-            *texture = current_glyph->texture;
-            if (*texture)
-                IDirect3DTexture9_AddRef(current_glyph->texture);
-        }
-        return D3D_OK;
-    }
-
-    /* Load the glyph and do the lookup again */
     hr = ID3DXFont_PreloadGlyphs(iface, glyph, glyph);
     if (FAILED(hr))
         return hr;
@@ -305,15 +286,12 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, 
 {
     struct d3dx_font *font = impl_from_ID3DXFont(iface);
     UINT glyph, x, y;
-    TEXTMETRICW tm;
     HRESULT hr;
 
     TRACE("iface %p, first %u, last %u\n", iface, first, last);
 
     if (last < first)
         return D3D_OK;
-
-    ID3DXFont_GetTextMetricsW(iface, &tm);
 
     for (glyph = first; glyph <= last; glyph++)
     {
@@ -393,11 +371,11 @@ static HRESULT WINAPI ID3DXFontImpl_PreloadGlyphs(ID3DXFont *iface, UINT first, 
 
         /* Fill in glyph data */
         current_glyph->blackbox.left   = offx - metrics.gmptGlyphOrigin.x + font->glyph_size / 2 - (metrics.gmBlackBoxX + 3) / 2;
-        current_glyph->blackbox.top    = offy - metrics.gmptGlyphOrigin.y + tm.tmAscent + 1;
+        current_glyph->blackbox.top    = offy - metrics.gmptGlyphOrigin.y + font->metrics.tmAscent + 1;
         current_glyph->blackbox.right  = current_glyph->blackbox.left + metrics.gmBlackBoxX + 2;
         current_glyph->blackbox.bottom = current_glyph->blackbox.top + metrics.gmBlackBoxY + 2;
         current_glyph->cellinc.x       = metrics.gmptGlyphOrigin.x - 1;
-        current_glyph->cellinc.y       = tm.tmAscent - metrics.gmptGlyphOrigin.y - 1;
+        current_glyph->cellinc.y       = font->metrics.tmAscent - metrics.gmptGlyphOrigin.y - 1;
         current_glyph->texture         = current_texture;
 
         /* Copy glyph data to the texture */
@@ -697,7 +675,6 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
     const WCHAR *strPtr;
     WCHAR line[MAX_BUFFER];
     int lh;
-    TEXTMETRICW tm;
     int x, y;
     int width;
     int max_width = 0;
@@ -737,11 +714,10 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
     width = textrect.right - textrect.left;
     strPtr = string;
 
-    ID3DXFont_GetTextMetricsW(iface, &tm);
-    lh = tm.tmHeight;
+    lh = font->metrics.tmHeight;
 
     if (format & DT_EXPANDTABS)
-        tabwidth = tm.tmAveCharWidth * 8;
+        tabwidth = font->metrics.tmAveCharWidth * 8;
 
     if (!(format & DT_CALCRECT) && !sprite)
     {
@@ -954,7 +930,6 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
     D3DDISPLAYMODE mode;
     struct d3dx_font *object;
     IDirect3D9 *d3d;
-    TEXTMETRICW metrics;
     HRESULT hr;
 
     TRACE("(%p, %p, %p)\n", device, desc, font);
@@ -1003,9 +978,15 @@ HRESULT WINAPI D3DXCreateFontIndirectW(IDirect3DDevice9 *device, const D3DXFONT_
 
     wine_rb_init(&object->glyph_tree, glyph_rb_compare);
 
-    GetTextMetricsW(object->hdc, &metrics);
+    if (!GetTextMetricsW(object->hdc, &object->metrics))
+    {
+        DeleteObject(object->hfont);
+        DeleteDC(object->hdc);
+        heap_free(object);
+        return D3DXERR_INVALIDDATA;
+    }
 
-    object->glyph_size = make_pow2(metrics.tmHeight);
+    object->glyph_size = make_pow2(object->metrics.tmHeight);
 
     object->texture_size = make_pow2(object->glyph_size);
     if (object->glyph_size < 256)
