@@ -512,7 +512,7 @@ static INT WINAPI ID3DXFontImpl_DrawTextA(ID3DXFont *iface, ID3DXSprite *sprite,
 }
 
 static void word_break(HDC hdc, const WCHAR *str, unsigned int *str_len,
-        unsigned int chars_fit, unsigned int *chars_used, SIZE *size)
+        unsigned int chars_fit, unsigned int *chars_used, BOOL line_start, SIZE *size)
 {
     SCRIPT_LOGATTR *sla;
     SCRIPT_ANALYSIS sa;
@@ -535,7 +535,7 @@ static void word_break(HDC hdc, const WCHAR *str, unsigned int *str_len,
         --i;
 
     /* If the there is no word that fits put in all characters that do fit */
-    if (!sla[i].fSoftBreak)
+    if (!sla[i].fSoftBreak && line_start)
         i = chars_fit;
 
     *chars_used = i;
@@ -553,46 +553,95 @@ static void word_break(HDC hdc, const WCHAR *str, unsigned int *str_len,
 }
 
 static const WCHAR *read_line(HDC hdc, const WCHAR *str, unsigned int *count,
-        WCHAR *dest, unsigned int *dest_len, int width, DWORD format, SIZE *size)
+        WCHAR *dest, unsigned int *dest_len, int width, unsigned int tab_width,
+        DWORD format, SIZE *size)
 {
-    unsigned int orig_count = *count;
+    int num_fit, current_width = 0;
     unsigned int i = 0;
-    int num_fit;
 
+    size->cy = 0;
     *dest_len = 0;
-    while (*count && (str[i] != '\n' || (format & DT_SINGLELINE)))
+    while (*count)
     {
-        --(*count);
-        if (str[i] != '\r' && str[i] != '\n')
-            dest[(*dest_len)++] = str[i];
-        ++i;
+        unsigned int seg_i, seg_len, prev_dest_len, seg_count;
+        BOOL word_broken = FALSE;
+        SIZE seg_size = {0};
+        int max_seg_width;
+
+        /* Create line segments until the next tab. If we don't have to expand */
+        /* tabs, just skip the tab character. */
+
+        if (str[i] == '\t')
+        {
+            if (tab_width)
+                current_width = ((current_width / tab_width) + 1) * tab_width;
+
+            --(*count);
+            if (format & DT_EXPANDTABS)
+                dest[(*dest_len)++] = str[i];
+            ++i;
+
+            max_seg_width = width - current_width;
+            if (max_seg_width < 0 && (format & DT_WORDBREAK))
+                break;
+
+            continue;
+        }
+
+        seg_i = i;
+        seg_count = *count;
+        prev_dest_len = *dest_len;
+
+        while (*count && (str[i] != '\n' || (format & DT_SINGLELINE)) && str[i] != '\t')
+        {
+            --(*count);
+            if (str[i] != '\r' && str[i] != '\n')
+                dest[(*dest_len)++] = str[i];
+            ++i;
+        }
+
+        num_fit = 0;
+        seg_len = *(dest_len) - prev_dest_len;
+        max_seg_width = width - current_width;
+        GetTextExtentExPointW(hdc, dest + prev_dest_len, seg_len, max_seg_width,
+                &num_fit, NULL, &seg_size);
+
+        if (num_fit < seg_len && (format & DT_WORDBREAK))
+        {
+            unsigned int chars_used;
+
+            word_break(hdc, dest + prev_dest_len, &seg_len, num_fit, &chars_used,
+                    !current_width, &seg_size);
+            *dest_len = prev_dest_len + seg_len;
+            *count = seg_count - chars_used;
+            i = seg_i + chars_used;
+            word_broken = TRUE;
+        }
+
+        current_width += seg_size.cx;
+        if (seg_size.cy > size->cy)
+            size->cy = seg_size.cy;
+
+        if (word_broken)
+        {
+            break;
+        }
+        else if (*count && str[i] == '\n')
+        {
+            --(*count);
+            ++i;
+            break;
+        }
     }
 
-    num_fit = 0;
-    GetTextExtentExPointW(hdc, dest, *dest_len, width, &num_fit, NULL, size);
-
-    if (num_fit < *dest_len && (format & DT_WORDBREAK))
-    {
-        unsigned int chars_used;
-
-        word_break(hdc, dest, dest_len, num_fit, &chars_used, size);
-        *count = orig_count - chars_used;
-        i = chars_used;
-    }
-
-    if (*count && str[i] == '\n')
-    {
-        --(*count);
-        ++i;
-    }
-
+    size->cx = current_width;
     if (*count)
         return str + i;
     return NULL;
 }
 
 static int compute_rect(struct d3dx_font *font, const WCHAR *string, unsigned int count,
-        WCHAR *line, RECT *rect, DWORD format)
+        WCHAR *line, RECT *rect, DWORD format, unsigned int tab_width)
 {
     int y, lh, width, top = rect->top;
     int max_width = 0;
@@ -606,7 +655,8 @@ static int compute_rect(struct d3dx_font *font, const WCHAR *string, unsigned in
     {
         unsigned int line_len;
 
-        string = read_line(font->hdc, string, &count, line, &line_len, width, format, &size);
+        string = read_line(font->hdc, string, &count, line, &line_len,
+                width, tab_width, format, &size);
 
         if (size.cx > max_width)
             max_width = size.cx;
@@ -652,8 +702,8 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
 {
     struct d3dx_font *font = impl_from_ID3DXFont(iface);
     int lh, x, y, width, top, ret = 0;
+    unsigned int count, tab_width = 0;
     ID3DXSprite *target = sprite;
-    unsigned int count;
     RECT r = {0};
     WCHAR *line;
     SIZE size;
@@ -675,6 +725,9 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
     if (format & DT_SINGLELINE)
         format &= ~DT_WORDBREAK;
 
+    if (format & DT_EXPANDTABS)
+        tab_width = font->metrics.tmAveCharWidth * 8;
+
     line = heap_alloc(count * sizeof(*line));
     if (!line)
         return 0;
@@ -694,7 +747,7 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
 
         top = rect->top;
 
-        ret = compute_rect(font, string, count, line, rect, format);
+        ret = compute_rect(font, string, count, line, rect, format, tab_width);
 
         if (format & DT_CALCRECT)
             goto cleanup;
@@ -714,13 +767,14 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
         ID3DXSprite_Begin(target, 0);
     }
 
+    /* Iterate over all lines */
     while (string)
     {
-        unsigned int line_len, i;
-        GCP_RESULTSW results;
-        D3DXVECTOR3 pos;
+        const WCHAR *line_seg = line;
+        unsigned int line_len;
 
-        string = read_line(font->hdc, string, &count, line, &line_len, width, format, &size);
+        string = read_line(font->hdc, string, &count, line, &line_len,
+                width, tab_width, format, &size);
 
         if (format & DT_CENTER)
             x = (rect->left + rect->right - size.cx) / 2;
@@ -729,57 +783,88 @@ static INT WINAPI ID3DXFontImpl_DrawTextW(ID3DXFont *iface, ID3DXSprite *sprite,
         else
             x = rect->left;
 
-        memset(&results, 0, sizeof(results));
-        results.nGlyphs = line_len;
-
-        results.lpCaretPos = heap_alloc(line_len * sizeof(*results.lpCaretPos));
-        if (!results.lpCaretPos)
-            goto cleanup;
-
-        results.lpGlyphs = heap_alloc(line_len * sizeof(*results.lpGlyphs));
-        if (!results.lpGlyphs)
+        /* Iterate over all line segments separated by tabs */
+        while (line_len)
         {
-            heap_free(results.lpCaretPos);
-            goto cleanup;
-        }
+            unsigned int i, seg_len = line_len;
+            GCP_RESULTSW results;
+            D3DXVECTOR3 pos;
 
-        GetCharacterPlacementW(font->hdc, line, line_len, 0, &results, 0);
-
-        for (i = 0; i < results.nGlyphs; ++i)
-        {
-            IDirect3DTexture9 *texture;
-            POINT cell_inc;
-            RECT black_box;
-
-            ID3DXFont_GetGlyphData(iface, results.lpGlyphs[i], &texture, &black_box, &cell_inc);
-
-            if (!texture)
-                continue;
-
-            pos.x = cell_inc.x + x + results.lpCaretPos[i];
-            pos.y = cell_inc.y + y;
-
-            if (!(format & DT_NOCLIP))
+            if (format & DT_EXPANDTABS)
             {
-                if (pos.x > rect->right)
-                {
-                    IDirect3DTexture9_Release(texture);
-                    continue;
-                }
-
-                if (pos.x + black_box.right - black_box.left > rect->right)
-                    black_box.right = black_box.left + rect->right - pos.x;
-
-                if (pos.y + black_box.bottom - black_box.top > rect->bottom)
-                    black_box.bottom = black_box.top + rect->bottom - pos.y;
+                /* Iterate until the next tab to create a line segment */
+                i = 0;
+                while (i < line_len && line_seg[i] != '\t')
+                    ++i;
+                seg_len = i;
+                if (seg_len != line_len && !GetTextExtentPointW(
+                        font->hdc, line_seg, seg_len, &size))
+                    goto cleanup;
             }
 
-            ID3DXSprite_Draw(target, texture, &black_box, NULL, &pos, color);
-            IDirect3DTexture9_Release(texture);
-        }
+            memset(&results, 0, sizeof(results));
+            results.nGlyphs = seg_len;
 
-        heap_free(results.lpCaretPos);
-        heap_free(results.lpGlyphs);
+            results.lpCaretPos = heap_alloc(seg_len * sizeof(*results.lpCaretPos));
+            if (!results.lpCaretPos)
+                goto cleanup;
+
+            results.lpGlyphs = heap_alloc(seg_len * sizeof(*results.lpGlyphs));
+            if (!results.lpGlyphs)
+            {
+                heap_free(results.lpCaretPos);
+                goto cleanup;
+            }
+
+            GetCharacterPlacementW(font->hdc, line_seg, seg_len, 0, &results, 0);
+
+            for (i = 0; i < results.nGlyphs; ++i)
+            {
+                IDirect3DTexture9 *texture;
+                POINT cell_inc;
+                RECT black_box;
+
+                ID3DXFont_GetGlyphData(iface, results.lpGlyphs[i], &texture,
+                                       &black_box, &cell_inc);
+
+                if (!texture)
+                    continue;
+
+                pos.x = cell_inc.x + x + results.lpCaretPos[i];
+                pos.y = cell_inc.y + y;
+
+                if (!(format & DT_NOCLIP))
+                {
+                    if (pos.x > rect->right)
+                    {
+                        IDirect3DTexture9_Release(texture);
+                        continue;
+                    }
+
+                    if (pos.x + black_box.right - black_box.left > rect->right)
+                        black_box.right = black_box.left + rect->right - pos.x;
+
+                    if (pos.y + black_box.bottom - black_box.top > rect->bottom)
+                        black_box.bottom = black_box.top + rect->bottom - pos.y;
+                }
+
+                ID3DXSprite_Draw(target, texture, &black_box, NULL, &pos, color);
+                IDirect3DTexture9_Release(texture);
+            }
+
+            line_len -= seg_len;
+            line_seg += seg_len;
+            if (line_len)
+            {
+                /* If there is anything left, this character is a tab */
+                --line_len;
+                ++line_seg;
+                x += ((size.cx / tab_width) + 1) * tab_width;
+            }
+
+            heap_free(results.lpCaretPos);
+            heap_free(results.lpGlyphs);
+        }
 
         y += lh;
         if (!(DT_NOCLIP & format) && (y > rect->bottom))
