@@ -791,6 +791,56 @@ static void test_ID3DXFont(IDirect3DDevice9 *device)
     height = ID3DXFont_DrawTextW(font, NULL, L"a\naaaaa aaaa", -1, &rect, 0, 0xff00ff);
     ok(height == 24, "Got unexpected height %d.\n", height);
 
+    {
+    SIZE size;
+    WCHAR glyphs[10];
+    int caret[10];
+    WORD indices[10];
+    GCP_RESULTSW results;
+
+    memset(&results, 0, sizeof(results));
+    results.lpCaretPos = caret;
+    results.lpGlyphs = glyphs;
+
+    hdc = ID3DXFont_GetDC(font);
+
+    GetTextExtentExPointW(hdc, L"aa", 2, 0, NULL, NULL, &size);
+    ok(size.cx == 10, "Got unexpected size %d.\n", size.cx);
+
+    /* This and the following are wrong in wine */
+    GetTextExtentExPointW(hdc, L"a\ta", 3, 0, NULL, NULL, &size);
+    ok(size.cx == 10, "Got unexpected size %d.\n", size.cx);
+
+    GetTextExtentExPointW(hdc, L"a\taa", 4, 0, NULL, NULL, &size);
+    ok(size.cx == 15, "Got unexpected size %d.\n", size.cx);
+
+    GetTextExtentExPointW(hdc, L"a\taa\t", 5, 0, NULL, NULL, &size);
+    ok(size.cx == 15, "Got unexpected size %d.\n", size.cx);
+
+    GetTextExtentExPointW(hdc, L"a aa ", 5, 0, NULL, NULL, &size);
+    ok(size.cx == 21, "Got unexpected size %d.\n", size.cx);
+
+    results.nGlyphs = 5;
+    GetCharacterPlacementW(hdc, L"a\ta a", 5, 0, &results, 0);
+    ok(results.lpGlyphs[0] == 68, "Got unexpected glyph %d.\n", results.lpGlyphs[0]);
+    /* This is wrong in wine */
+    ok(results.lpGlyphs[1] == 3, "Got unexpected glyph %d.\n", results.lpGlyphs[1]);
+    ok(results.lpGlyphs[2] == 68, "Got unexpected glyph %d.\n", results.lpGlyphs[2]);
+    ok(results.lpGlyphs[3] == 3, "Got unexpected glyph %d.\n", results.lpGlyphs[3]);
+    ok(results.lpGlyphs[4] == 68, "Got unexpected glyph %d.\n", results.lpGlyphs[4]);
+    ok(results.lpCaretPos[0] == 0, "Got unexpected pos %d.\n", results.lpCaretPos[0]);
+    ok(results.lpCaretPos[1] == 5, "Got unexpected pos %d.\n", results.lpCaretPos[1]);
+    /* This and the following are wrong in wine */
+    ok(results.lpCaretPos[2] == 5, "Got unexpected pos %d.\n", results.lpCaretPos[2]);
+    ok(results.lpCaretPos[3] == 10, "Got unexpected pos %d.\n", results.lpCaretPos[3]);
+    ok(results.lpCaretPos[4] == 13, "Got unexpected pos %d.\n", results.lpCaretPos[4]);
+
+    /* This is correct though */
+    GetGlyphIndicesW(hdc, L" \t", 2, indices, 0);
+    ok(indices[0] == 3, "Got unexpected index %d.\n", indices[0]);
+    ok(indices[1] == 0, "Got unexpected index %d.\n", indices[0]);
+    }
+
     height = ID3DXFont_DrawTextW(font, NULL, L"a\naaaaa aaaa", -1, &rect, DT_WORDBREAK, 0xff00ff);
     ok(height == 36, "Got unexpected height %d.\n", height);
 
